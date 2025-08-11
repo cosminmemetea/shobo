@@ -27,13 +27,13 @@ State‑of‑the‑art, modular edge stack for **RGB + IR (IMX219) + ToF + LiDAR
 
 flowchart LR
   subgraph Sensors
-    IR[IMX219-IR (CSI)] -- "/sensors/ir/image_raw" --> IRnode
-    RGB[IMX219 USB (UVC)] -- "/sensors/rgb/image_raw" --> RGBnode
-    ToF[ToF 0.43MP] -- "/sensors/depth/image_raw" --> TOFnode
-    LIDAR[LiDAR 2D] -- "/sensors/lidar/scan" --> LIDARnode
-    IMU[IMU] -- "/sensors/imu/data" --> IMUnode
-    GPS[GNSS] -- "/sensors/gps/fix" --> GPSnode
-    Voice[Voice Cmd] -- "/sensors/voice/command" --> VOICEnode
+    IR -->|/sensors/ir/image_raw| IRnode
+    RGB -->|/sensors/rgb/image_raw| RGBnode
+    ToF -->|/sensors/depth/image_raw| TOFnode
+    LIDAR -->|/sensors/lidar/scan| LIDARnode
+    IMU -->|/sensors/imu/data| IMUnode
+    GPS -->|/sensors/gps/fix| GPSnode
+    Voice -->|/sensors/voice/command| VOICEnode
   end
 
   subgraph Sensor_Nodes
@@ -47,8 +47,8 @@ flowchart LR
   end
 
   subgraph Perception
-    YOLOIR[yolo_ir (TRT)]
-    YOLORGB[yolo_rgb (TRT)]
+    YOLOIR[yolo_irTRT]
+    YOLORGB[yolo_rgbTRT]
     DEPTHTRK[depth_tracker]
   end
 
@@ -80,7 +80,6 @@ flowchart LR
   SLAM --> NAV2
 
   FUSE --> QT
-
 ```
 
 - **Mid‑level fusion**: per‑modality **feature vectors** (RGB/IR embeddings, ToF stats, etc.) → small **MLP/attention** → `/fusion/detections`.
