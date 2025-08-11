@@ -1,4 +1,4 @@
-# Shobo – Multi‑Sensor ROS 2 Patrol Robot (Jetson Orin Nano)
+# Shobo - Multi‑Sensor ROS 2 Patrol Robot (Jetson Orin Nano)
 
 State‑of‑the‑art, modular edge stack for **RGB + IR (IMX219) + ToF + LiDAR + Voice** with
 **mid‑level fusion**, **EKF/SLAM/Nav2 patrol**, and **Qt visualization** (edge & remote).
@@ -92,18 +92,18 @@ flowchart LR
 ## 2) Namespaces & Topics (SOTA)
 
 ### Sensors
-- `/sensors/ir/image_raw` (`sensor_msgs/Image`) – **Waveshare IMX219‑77IR (CSI)**
-- `/sensors/rgb/image_raw` (`sensor_msgs/Image`) – **Arducam IMX219 USB (UVC)`**
-- `/sensors/depth/image_raw` (`sensor_msgs/Image`) – **Arducam ToF**
-- `/sensors/lidar/scan` (`sensor_msgs/LaserScan`) – **RPLIDAR/YDLIDAR**
-- `/sensors/imu/data` (`sensor_msgs/Imu`) – **BNO055**
-- `/sensors/odom/wheel` (`nav_msgs/Odometry`) – wheel encoders
-- `/sensors/gps/fix` (`sensor_msgs/NavSatFix`) – **u‑blox**
-- `/sensors/voice/command` (`std_msgs/String`) – **Yahboom**
+- `/sensors/ir/image_raw` (`sensor_msgs/Image`) - **Waveshare IMX219‑77IR (CSI)**
+- `/sensors/rgb/image_raw` (`sensor_msgs/Image`) - **Arducam IMX219 USB (UVC)`**
+- `/sensors/depth/image_raw` (`sensor_msgs/Image`) - **Arducam ToF**
+- `/sensors/lidar/scan` (`sensor_msgs/LaserScan`) - **RPLIDAR/YDLIDAR**
+- `/sensors/imu/data` (`sensor_msgs/Imu`) - **BNO055**
+- `/sensors/odom/wheel` (`nav_msgs/Odometry`) - wheel encoders
+- `/sensors/gps/fix` (`sensor_msgs/NavSatFix`) - **u‑blox**
+- `/sensors/voice/command` (`std_msgs/String`) - **Yahboom**
 
 ### Perception
-- `/perception/yolo_rgb/detections` (`vision_msgs/Detection2DArray`) – **Arducam IMX219 USB**
-- `/perception/yolo_ir/detections` (`vision_msgs/Detection2DArray`) – **Waveshare IMX219‑IR**
+- `/perception/yolo_rgb/detections` (`vision_msgs/Detection2DArray`) - **Arducam IMX219 USB**
+- `/perception/yolo_ir/detections` (`vision_msgs/Detection2DArray`) - **Waveshare IMX219‑IR**
 - `/perception/depth_tracker/objects` (`vision_msgs/Detection3DArray` or `sensor_msgs/PointCloud2`)
 - (optional) `/perception/*/annotated` (`sensor_msgs/Image` via `image_transport/compressed`)
 
@@ -118,7 +118,7 @@ flowchart LR
 - `/ui/cmd` (exposure/gain, start/stop record, mission commands)
 
 **QoS**
-- Sensors: **SensorData QoS** (best_effort, depth=10–20)  
+- Sensors: **SensorData QoS** (best_effort, depth=10-20)  
 - Control/Viz: **reliable**  
 - Bags/records: **reliable**, keep_last with adequate depth
 
@@ -128,24 +128,24 @@ flowchart LR
 
 | Node (package/exe) | Sensor used | Subscribes | Publishes | Notes |
 |---|---|---|---|---|
-| `/sensors/ir/imx219_node` | **Waveshare IMX219‑77IR (CSI)** | – | `/sensors/ir/image_raw`, `/sensors/ir/camera_info` | **Argus (NVMM zero‑copy)**, exposure/gain params |
-| `/sensors/rgb/uvc_node` | **Arducam IMX219 USB** | – | `/sensors/rgb/image_raw`, `/sensors/rgb/camera_info` | `v4l2src` → NV12/BGR |
-| `/sensors/depth/tof_node` | **Arducam ToF** | – | `/sensors/depth/image_raw` (+ `/points`) | vendor SDK or OpenCV |
-| `/sensors/lidar/driver` | **RPLIDAR/YDLIDAR** | – | `/sensors/lidar/scan` | vendor ROS driver |
-| `/sensors/imu/driver` | **BNO055** | – | `/sensors/imu/data` | i2c/spi/serial |
-| `/sensors/odom/wheel_node` | Encoders | – | `/sensors/odom/wheel` | quadrature → odom |
-| `/sensors/gps/ublox` | **u‑blox** | – | `/sensors/gps/fix` | ublox_ros |
-| `/sensors/voice/node` | **Yahboom** | – | `/sensors/voice/command` | wake‑word & STT |
+| `/sensors/ir/imx219_node` | **Waveshare IMX219‑77IR (CSI)** | - | `/sensors/ir/image_raw`, `/sensors/ir/camera_info` | **Argus (NVMM zero‑copy)**, exposure/gain params |
+| `/sensors/rgb/uvc_node` | **Arducam IMX219 USB** | - | `/sensors/rgb/image_raw`, `/sensors/rgb/camera_info` | `v4l2src` → NV12/BGR |
+| `/sensors/depth/tof_node` | **Arducam ToF** | - | `/sensors/depth/image_raw` (+ `/points`) | vendor SDK or OpenCV |
+| `/sensors/lidar/driver` | **RPLIDAR/YDLIDAR** | - | `/sensors/lidar/scan` | vendor ROS driver |
+| `/sensors/imu/driver` | **BNO055** | - | `/sensors/imu/data` | i2c/spi/serial |
+| `/sensors/odom/wheel_node` | Encoders | - | `/sensors/odom/wheel` | quadrature → odom |
+| `/sensors/gps/ublox` | **u‑blox** | - | `/sensors/gps/fix` | ublox_ros |
+| `/sensors/voice/node` | **Yahboom** | - | `/sensors/voice/command` | wake‑word & STT |
 | `/perception/yolo_rgb` | **Arducam IMX219 USB** | `/sensors/rgb/image_raw` | `/perception/rgb/detections`, `/perception/rgb/annotated` | **DetectorNode** with `ModelProfile=rgb` (TRT, INT8/FP16) |
 | `/perception/yolo_ir` | **Waveshare IMX219‑IR** | `/sensors/ir/image_raw` | `/perception/ir/detections`, `/perception/ir/annotated` | **DetectorNode** with `ModelProfile=ir` (diff. normalization/weights) |
 | `/perception/depth_tracker` | **Arducam ToF** | `/sensors/depth/image_raw` | `/perception/depth/objects` | 3D ROIs/centroids |
 | `/fusion/mid_fusion` | All | `/perception/*/detections`, `/sensors/depth/*` | `/fusion/detections` | feature‑level concat/attention; handles missing modalities |
-| `/localization/ekf` | – | imu, wheel odom, gps | `/odom` | `robot_localization` EKF |
+| `/localization/ekf` | - | imu, wheel odom, gps | `/odom` | `robot_localization` EKF |
 | `/slam/slam_toolbox` | **LiDAR** | `/sensors/lidar/scan` | `/map`, `/tf` | or Cartographer |
-| `/nav2/*` | – | `/map`, `/odom`, `/fusion/detections` | `/cmd_vel` | waypoints/patrol |
-| `/infra/rosbridge` | – | all | WS :8765 | remote API |
-| `/infra/web_video_server` | – | image topics | HTTP MJPEG/H264 | remote video |
-| `/viz/qt_viewer` | – | `/fusion/detections`, annotated images, `/sys/metrics` | `/ui/cmd` | runs on Orin or on another PC |
+| `/nav2/*` | - | `/map`, `/odom`, `/fusion/detections` | `/cmd_vel` | waypoints/patrol |
+| `/infra/rosbridge` | - | all | WS :8765 | remote API |
+| `/infra/web_video_server` | - | image topics | HTTP MJPEG/H264 | remote video |
+| `/viz/qt_viewer` | - | `/fusion/detections`, annotated images, `/sys/metrics` | `/ui/cmd` | runs on Orin or on another PC |
 
 
 ---
@@ -190,7 +190,7 @@ flowchart LR
 ros2 launch camera_imx219 imx219.launch.py width:=960 height:=720 fps:=30   exposure_us:=80000 gain_min:=1.0 gain_max:=8.0
 ```
 
-### B) Perception – YOLO IR & YOLO RGB
+### B) Perception - YOLO IR & YOLO RGB
 ```bash
 # Unified DetectorNode with profiles:
 ros2 launch detector_node detector.launch.py   model_profile:=config/models/yolo_ir_v1/model.yaml  namespace:=/perception/yolo_ir   subscribe:=/sensors/ir/image_raw publish:=/perception/ir
