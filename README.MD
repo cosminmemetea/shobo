@@ -3,6 +3,26 @@
 State‑of‑the‑art, modular edge stack for **RGB + IR (IMX219) + ToF + LiDAR + Voice** with
 **mid‑level fusion**, **EKF/SLAM/Nav2 patrol**, and **Qt visualization** (edge & remote).
 
+**What it does:**
+
+- It looks (RGB + IR + ToF + LiDAR)
+- It understands (YOLO + mid-fusion + SLAM)
+- It navigates (EKF + Nav2)
+- It talks to you.
+
+Natural commands: "come to me," "patrol," "stop," "what do you see now?"
+Responds vocally and textually (in Qt Viz and via TTS).
+
+### Design decisions 
+- Containers for reproducibility; components + intra-process zero-copy for speed.
+- Argus/NVMM camera path for CSI; TensorRT INT8/FP16; engine cache for models.
+- Two detector instances (same code, different ModelProfile) to respect RGB vs IR stats.
+- Mid-level fusion for night/occlusion robustness.
+- Local small VLM for offline Q&A; remote large VLM for rich answers.
+- rosbridge + H264/WebRTC for remote Qt; Qt can also run on Orin for minimum latency.
+
+
+
 ---
 
 ## 0) Hardware
@@ -21,39 +41,101 @@ State‑of‑the‑art, modular edge stack for **RGB + IR (IMX219) + ToF + LiDAR
 
 ---
 
+## 0) Frame Per Seconds & Compute Requirements
+
+| Pipeline               |        Input |        Target | Notes                                      |
+| ---------------------- | -----------: | ------------: | ------------------------------------------ |
+| YOLO (RGB, nano/small) |      640×640 | **20–35 fps** | TRT INT8/FP16; capture 960×540 or 1280×720 |
+| YOLO (IR, nano/small)  |      640×640 | **20–35 fps** | Separate ModelProfile for NIR              |
+| ToF depth\_tracker     |       native | **20–30 fps** | Lightweight                                |
+| Mid\_fusion            | feature vecs | **30–50 fps** | \~1–2 ms                                   |
+| LiDAR SLAM             |            — |   **5–10 Hz** | A2/G4 typical                              |
+| EKF                    |            — | **30–100 Hz** | IMU 100 Hz, odom 30 Hz, GPS 5–10 Hz        |
+| Nav2 control           |            — |  **20–30 Hz** | Costmaps tuned                             |
+| Web video (H264)       |         720p | **15–30 fps** | `image_transport/compressed`               |
+| Local VLM (2B quant)   |   1–2 frames | **0.5–2 QPS** | Q\&A burst, not continuous                 |
+| Remote VLM (7B–13B)    |   1–2 frames |   **2–8 QPS** | Depends on remote GPU                      |
+
+
+---
 ## 1) High‑Level Architecture
 
 ```mermaid
-
-flowchart LR
-  subgraph Sensors
-    IR -->|/sensors/ir/image_raw| IRnode
-    RGB -->|/sensors/rgb/image_raw| RGBnode
-    ToF -->|/sensors/depth/image_raw| TOFnode
-    LIDAR -->|/sensors/lidar/scan| LIDARnode
-    IMU -->|/sensors/imu/data| IMUnode
-    GPS -->|/sensors/gps/fix| GPSnode
-    Voice -->|/sensors/voice/command| VOICEnode
+graph LR
+  subgraph ORIN[Jetson Orin Nano]
+    subgraph C1[Container: mmx-perception]
+      A1[sensors: imx219_ir, uvc_rgb, tof, lidar, imu, gps, voice]
+      A2[perception: yolo_ir, yolo_rgb, depth_tracker]
+      A3[fusion: mid_fusion]
+      A1 --> A2 --> A3
+    end
+    subgraph C2[Container: mmx-nav]
+      N1[robot_localization EKF]
+      N2[slam_toolbox / cartographer]
+      N3[Nav2]
+      N1 --> N3
+      N2 --> N3
+    end
+    subgraph C3[Container: mmx-infra]
+      I1[rosbridge port 8765]
+      I2[web_video_server port 8080]
+      I3[metrics exporter]
+    end
+    subgraph C4[Container: mmx-llm]
+      L1[STT/TTS]
+      L2[VLM local or gateway]
+    end
+    C1 ---|DDS host network| C2
+    C1 ---|DDS host network| C3
+    C2 ---|DDS host network| C3
+    C1 ---|DDS host network| C4
   end
 
-  subgraph Sensor_Nodes
-    IRnode[imx219_ir_node]
-    RGBnode[uvc_rgb_node]
-    TOFnode[tof_camera_node]
-    LIDARnode[lidar_driver]
-    IMUnode[imu_driver]
-    GPSnode[gps_driver]
-    VOICEnode[voice_node]
+  subgraph CLOUD[Remote GPU optional]
+    R1[Large VLM server]
+  end
+
+  subgraph MAC[Operator Laptop]
+    QV[Qt Viz App]
+  end
+
+  L2 ---|gRPC/HTTP optional| R1
+  QV -->|WS port 8765 rosbridge| I1
+  QV -->|HTTP port 8080 video| I2
+```
+
+---
+
+``` mermaid
+graph LR
+  subgraph Sensors
+    IR[IMX219-IR CSI] -->|/sensors/ir/image_raw| IRnode
+    RGB[IMX219 USB UVC] -->|/sensors/rgb/image_raw| RGBnode
+    ToF[ToF 0.43MP] -->|/sensors/depth/image_raw| TOFnode
+    LIDAR[LiDAR 2D] -->|/sensors/lidar/scan| LIDARnode
+    IMU[IMU] -->|/sensors/imu/data| IMUnode
+    GPS[GNSS] -->|/sensors/gps/fix| GPSnode
+    Voice[Voice Hotword] -->|/sensors/voice/command| VOICEnode
   end
 
   subgraph Perception
-    YOLOIR[yolo_irTRT]
-    YOLORGB[yolo_rgbTRT]
+    IRnode[imx219_ir_node]
+    RGBnode[uvc_rgb_node]
+    TOFnode[tof_camera_node]
+    YOLOIR[yolo_ir TRT]
+    YOLORGB[yolo_rgb TRT]
     DEPTHTRK[depth_tracker]
   end
 
   subgraph Fusion
     FUSE[mid_fusion]
+  end
+
+  subgraph LLM
+    STT[stt_node] --> INT[intent_manager]
+    ASK[/llm/ask_scene/] --> VLM[VLM service]
+    VLM --> ANS[/llm/answer/]
+    TTS[tts_node]
   end
 
   subgraph Nav
@@ -62,8 +144,10 @@ flowchart LR
     NAV2[Nav2]
   end
 
-  subgraph Viz
+  subgraph Viz_Infra
     QT[Qt Viewer]
+    ROSWS[rosbridge port 8765]
+    WVS[web_video_server port 8080]
   end
 
   IRnode --> YOLOIR
@@ -72,15 +156,26 @@ flowchart LR
   YOLOIR --> FUSE
   YOLORGB --> FUSE
   DEPTHTRK --> FUSE
-
   LIDARnode --> SLAM
   IMUnode --> EKF
   GPSnode --> EKF
-  EKF --> NAV2
+  FUSE --> NAV2
   SLAM --> NAV2
-
+  NAV2 --> QT
   FUSE --> QT
+  YOLOIR --> WVS
+  YOLORGB --> WVS
+  QT -->|WS port 8765| ROSWS
+  VOICEnode --> STT
+  INT -->|come_here/patrol/stop| NAV2
+  QT -->|ask scene| ASK
+  FUSE -->|image snapshot| VLM
+  ANS --> QT
+  ANS --> TTS
 ```
+
+---
+
 
 - **Mid‑level fusion**: per‑modality **feature vectors** (RGB/IR embeddings, ToF stats, etc.) → small **MLP/attention** → `/fusion/detections`.
 - **Navigation**: slam_toolbox/Cartographer + robot_localization (EKF) + Nav2 (waypoints/patrol).
@@ -181,31 +276,51 @@ flowchart LR
 
 ---
 
+## Where everything runs (for performance + flexibility)
+
+### On Jetson Orin Nano (ROS 2 is inside containers):
+
+- perception (ROS 2 components, single process):
+Sensors → YOLO (RGB/IR, TensorRT) → ToF depth tracker → mid_fusion
+Reason: intra-process zero-copy, Argus/NVMM for CSI, minimal latency.
+
+- nav:
+robot_localization (EKF/UKF) + slam_toolbox/Cartographer + Nav2.
+
+- infra:
+rosbridge_websocket (WS :8765), web_video_server (H264/MJPEG, :8080), metrics exporter.
+
+- llm  (Vision-Language + speech):
+
+STT (Whisper tiny/base quant) + TTS (Piper/Coqui TTS)
+
+VLM: local small model (e.g., Qwen2-VL-2B quant) or remote gateway to a bigger VLM server.
+
+
+### On your PC (operator):
+
+- Qt Viz app (native or container):
+Subscribes via rosbridge (metadata) + web_video_server (H264) for video.
+For the lowest latency, you can also run Qt directly on Orin (DDS local).
+
+### Container wiring (Orin):
+
+- All containers use: --runtime nvidia --network host --ipc host
+
+- Devices: Cameras: --device /dev/video0 … + -v /tmp/argus_socket:/tmp/argus_socket (CSI)
+
+- LiDAR/GPS/IMU: --device /dev/ttyUSB0 / --device /dev/ttyTHS1 / --device /dev/i2c-1
+
+- Audio (STT/TTS): --device /dev/snd
+
+- Host networking makes DDS discovery trivial across containers.
+
+
+
+---
 ## 6) Build & Run
 
-### A) Sensors (example IMX219‑IR)
-```bash
-# Launch camera (Argus/NVMM)
-ros2 launch camera_imx219 imx219.launch.py width:=960 height:=720 fps:=30   exposure_us:=80000 gain_min:=1.0 gain_max:=8.0
-```
 
-### B) Perception - YOLO IR & YOLO RGB
-```bash
-# Unified DetectorNode with profiles:
-ros2 launch detector_node detector.launch.py   model_profile:=config/models/yolo_ir_v1/model.yaml  namespace:=/perception/yolo_ir   subscribe:=/sensors/ir/image_raw publish:=/perception/ir
-
-ros2 launch detector_node detector.launch.py   model_profile:=config/models/yolo_rgb_v1/model.yaml namespace:=/perception/yolo_rgb   subscribe:=/sensors/rgb/image_raw publish:=/perception/rgb
-```
-
-### C) Fusion + Localization + Nav2
-```bash
-ros2 launch mid_fusion mid_fusion.launch.py
-ros2 launch robot_localization ekf.launch.py
-ros2 launch slam_toolbox online_async.launch.py
-ros2 launch nav2_bringup bringup_launch.py use_sim_time:=false
-```
-
-### D) Remote visualization
 ```bash
 # On Orin:
 ros2 run rosbridge_server rosbridge_websocket --port 8765 &
